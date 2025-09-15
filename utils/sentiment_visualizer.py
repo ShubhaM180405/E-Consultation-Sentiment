@@ -12,7 +12,9 @@ def sentiment_distribution(df: pd.DataFrame):
         color_discrete_map={
             "Positive": "lightblue",
             "Negative": "red",
-            "Neutral": "grey"
+            "Neutral": "grey",
+            "Neutral (Dominantly Negative)": "orange",
+            "Neutral (Dominantly Positive)": "green"
         }
     )
     fig.update_traces(textinfo="percent+label")
@@ -26,11 +28,13 @@ def sentiment_over_time(df: pd.DataFrame):
     df["date"] = pd.to_datetime(df["date"])
     fig = px.scatter(
         df, x="date", y="sentiment", color="sentiment",
-        hover_data=["text", "author"],
+        hover_data=["text"],
         color_discrete_map={
             "Positive": "lightblue",
             "Negative": "red",
-            "Neutral": "grey"
+            "Neutral": "grey",
+            "Neutral (Dominantly Negative)": "orange",
+            "Neutral (Dominantly Positive)": "green"
         }
     )
     fig.update_layout(title="📈 Sentiment Over Time", yaxis_title="Sentiment")
