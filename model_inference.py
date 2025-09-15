@@ -26,12 +26,22 @@ def adjust_sentiment(text: str, sentiment: str) -> str:
     text_lower = text.lower()
 
     if sentiment == "Neutral":
-        if any(word in text_lower for word in NEUTRAL_KEYWORDS):
-            return "Neutral"  # stays plain Neutral
-        if any(word in text_lower for word in NEGATIVE_KEYWORDS):
+        # Count keyword occurrences
+        pos_hits = sum(word in text_lower for word in POSITIVE_KEYWORDS)
+        neg_hits = sum(word in text_lower for word in NEGATIVE_KEYWORDS)
+        neu_hits = sum(word in text_lower for word in NEUTRAL_KEYWORDS)
+
+        # If explicitly neutral keywords, keep Neutral
+        if neu_hits > 0 and pos_hits == 0 and neg_hits == 0:
+            return "Neutral"
+
+        if neg_hits > pos_hits:
             return "Neutral (Dominantly Negative)"
-        if any(word in text_lower for word in POSITIVE_KEYWORDS):
+        elif pos_hits > neg_hits:
             return "Neutral (Dominantly Positive)"
+        else:
+            return "Neutral"  # balanced or no strong signal
+
     return sentiment
 
 def analyze_sentiment(text: str) -> dict:
