@@ -1,26 +1,31 @@
 # model_inference.py
-from transformers import pipeline
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 
-# Load Hugging Face pipeline
-sentiment_pipeline = pipeline("sentiment-analysis")
+# Load Cardiff NLP 3-class sentiment model
+MODEL = "cardiffnlp/twitter-roberta-base-sentiment"
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL)
+
+sentiment_pipeline = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+
+# Mapping HuggingFace labels -> Human-readable
+label_map = {
+    "LABEL_0": "Negative",
+    "LABEL_1": "Neutral",
+    "LABEL_2": "Positive"
+}
 
 def analyze_sentiment(text: str):
-    """Analyze single comment sentiment"""
-    result = sentiment_pipeline(text)[0]
-    label = result['label']
-    score = result['score']
+    """Analyze single comment sentiment (3-class)"""
+    result = sentiment_pipeline(text, truncation=True)[0]
+    label = label_map.get(result["label"], result["label"])
+    score = round(result["score"], 3)
 
-    if label == "POSITIVE":
-        sentiment = "Positive"
-    elif label == "NEGATIVE":
-        sentiment = "Negative"
-    else:
-        sentiment = "Neutral"
-
-    return {"text": text, "sentiment": sentiment, "score": round(score, 3)}
+    return {"text": text, "sentiment": label, "score": score}
 
 def analyze_batch(comments: list):
-    """Analyze multiple comments"""
+    """Analyze multiple comments (expects list of dicts with 'text')"""
     results = []
     for comment in comments:
         analysis = analyze_sentiment(comment["text"])
