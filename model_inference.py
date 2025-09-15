@@ -19,12 +19,15 @@ def load_keywords(path: str) -> list:
 
 NEGATIVE_KEYWORDS = load_keywords("keywords_negative.csv")
 POSITIVE_KEYWORDS = load_keywords("keywords_positive.csv")
+NEUTRAL_KEYWORDS  = load_keywords("keywords_neutral.csv")
 
 def adjust_sentiment(text: str, sentiment: str) -> str:
-    """Refine Neutral sentiment into Dominantly Negative/Positive if keywords found."""
+    """Refine Neutral into Dominantly Positive/Negative if keywords found."""
     text_lower = text.lower()
 
     if sentiment == "Neutral":
+        if any(word in text_lower for word in NEUTRAL_KEYWORDS):
+            return "Neutral"  # stays plain Neutral
         if any(word in text_lower for word in NEGATIVE_KEYWORDS):
             return "Neutral (Dominantly Negative)"
         if any(word in text_lower for word in POSITIVE_KEYWORDS):
