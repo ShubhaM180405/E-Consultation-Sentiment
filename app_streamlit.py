@@ -33,15 +33,20 @@ elif input_method == "Multiple Comments":
             if t.strip():
                 st.session_state["comments"].append({"text": t.strip(), "author": author, "date": str(date_input)})
 
+# app_streamlit.py (excerpt)
 elif input_method == "Upload File":
-    uploaded_file = st.sidebar.file_uploader("Upload CSV with comments", type=["csv"])
-    if uploaded_file:
+    uploaded_file = st.sidebar.file_uploader(
+        "Upload CSV / XLSX / TXT with comments", 
+        type=["csv", "txt", "xlsx", "xls"]
+    )
+    if uploaded_file is not None:
         try:
             df = dh.load_comments(uploaded_file)
             st.session_state["comments"].extend(df.to_dict("records"))
             st.success(f"✅ Loaded {len(df)} comments from file")
         except Exception as e:
             st.error(f"❌ Could not load file: {e}")
+
 
 
 if st.sidebar.button("Clear All Comments"):
