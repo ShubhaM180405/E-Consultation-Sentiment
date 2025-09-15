@@ -21,15 +21,15 @@ NEGATIVE_KEYWORDS = load_keywords("keywords_negative.csv")
 POSITIVE_KEYWORDS = load_keywords("keywords_positive.csv")
 NEUTRAL_KEYWORDS  = load_keywords("keywords_neutral.csv")
 
-def adjust_sentiment(text: str, sentiment: str) -> str:
-    """Refine sentiment with keyword counts, even if not Neutral."""
+def adjust_sentiment(text: str, sentiment: str, score: float) -> str:
+    """Refine sentiment using keyword counts + model confidence."""
     text_lower = text.lower()
 
     pos_hits = sum(word in text_lower for word in POSITIVE_KEYWORDS)
     neg_hits = sum(word in text_lower for word in NEGATIVE_KEYWORDS)
     neu_hits = sum(word in text_lower for word in NEUTRAL_KEYWORDS)
 
-    # Case 1: If base model already says Neutral
+    # If base is Neutral → refine normally
     if sentiment == "Neutral":
         if neg_hits > pos_hits:
             return "Neutral (Dominantly Negative)"
@@ -38,15 +38,18 @@ def adjust_sentiment(text: str, sentiment: str) -> str:
         else:
             return "Neutral"
 
-    # Case 2: If base model says Positive but negatives dominate
-    if sentiment == "Positive" and neg_hits > pos_hits:
-        return "Neutral (Dominantly Negative)"
+    # If base is Positive but negatives dominate strongly
+    if sentiment == "Positive":
+        if neg_hits > pos_hits:
+            if score < 0.95:  # only override if model isn't extremely confident
+                return "Neutral (Dominantly Negative)"
 
-    # Case 3: If base model says Negative but positives dominate
-    if sentiment == "Negative" and pos_hits > neg_hits:
-        return "Neutral (Dominantly Positive)"
+    # If base is Negative but positives dominate strongly
+    if sentiment == "Negative":
+        if pos_hits > neg_hits:
+            if score < 0.95:
+                return "Neutral (Dominantly Positive)"
 
-    # Otherwise keep as-is
     return sentiment
 
 def analyze_sentiment(text: str) -> dict:
@@ -62,7 +65,7 @@ def analyze_sentiment(text: str) -> dict:
         sentiment = "Positive"
 
     # Apply keyword adjustment
-    sentiment = adjust_sentiment(text, sentiment)
+    sentiment = adjust_sentiment(text, sentiment, result["score"])
 
     return {"text": text, "sentiment": sentiment, "score": round(result["score"], 3)}
 
