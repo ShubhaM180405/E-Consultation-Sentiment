@@ -72,18 +72,31 @@ with tabs[0]:
         # Metric Cards
         col1, col2, col3, col4 = st.columns(4)
         total = len(df)
-        positive = len(df[df["sentiment"]=="Positive"])
-        negative = len(df[df["sentiment"]=="Negative"])
-        neutral = len(df[df["sentiment"]=="Neutral"])
+        positive = len(df[df["sentiment"] == "Positive"])
+        negative = len(df[df["sentiment"] == "Negative"])
+        neutral = len(df[df["sentiment"] == "Neutral"])
+
         col1.metric("😊 Positive", positive, f"{positive/total:.1%}")
         col2.metric("😞 Negative", negative, f"{negative/total:.1%}")
         col3.metric("😐 Neutral", neutral, f"{neutral/total:.1%}")
         col4.metric("📊 Total", total)
 
-        # Charts
+        # Charts with dark theme
         c1, c2 = st.columns(2)
-        c1.plotly_chart(viz.sentiment_distribution(df), use_container_width=True)
-        c2.plotly_chart(viz.sentiment_over_time(df), use_container_width=True)
+        fig_dist = viz.sentiment_distribution(df)
+        fig_time = viz.sentiment_over_time(df)
+
+        # Apply dark background
+        for fig in [fig_dist, fig_time]:
+            fig.update_layout(
+                template="plotly_dark",
+                plot_bgcolor="black",
+                paper_bgcolor="black",
+                font=dict(color="white")
+            )
+
+        c1.plotly_chart(fig_dist, use_container_width=True)
+        c2.plotly_chart(fig_time, use_container_width=True)
 
 # TAB 2: Analytics
 with tabs[1]:
