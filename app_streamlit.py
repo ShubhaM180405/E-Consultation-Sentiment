@@ -68,24 +68,28 @@ with tabs[0]:
     if "results" in st.session_state:
         df = pd.DataFrame(st.session_state["results"])
 
-        # Metric Cards
-        col1, col2, col3, col4 = st.columns(4)
+        # Counts for each sentiment
         total = len(df)
         positive = len(df[df["sentiment"] == "Positive"])
         negative = len(df[df["sentiment"] == "Negative"])
         neutral = len(df[df["sentiment"] == "Neutral"])
+        neutral_neg = len(df[df["sentiment"] == "Neutral (Dominantly Negative)"])
+        neutral_pos = len(df[df["sentiment"] == "Neutral (Dominantly Positive)"])
 
+        # Metric Cards
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
         col1.metric("😊 Positive", positive, f"{positive/total:.1%}")
         col2.metric("😞 Negative", negative, f"{negative/total:.1%}")
         col3.metric("😐 Neutral", neutral, f"{neutral/total:.1%}")
-        col4.metric("📊 Total", total)
+        col4.metric("😐⬇️ Neutral-Dom Neg", neutral_neg, f"{neutral_neg/total:.1%}")
+        col5.metric("😐⬆️ Neutral-Dom Pos", neutral_pos, f"{neutral_pos/total:.1%}")
+        col6.metric("📊 Total", total)
 
         # Charts with dark theme
         c1, c2 = st.columns(2)
         fig_dist = viz.sentiment_distribution(df)
         fig_time = viz.sentiment_over_time(df)
 
-        # Apply dark background
         for fig in [fig_dist, fig_time]:
             fig.update_layout(
                 template="plotly_dark",
