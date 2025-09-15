@@ -1,34 +1,60 @@
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+import pandas as pd
+from transformers import pipeline
 
-# Load Cardiff NLP 3-class sentiment model
-MODEL = "cardiffnlp/twitter-roberta-base-sentiment"
+# Load model
+sentiment_pipeline = pipeline(
+    "sentiment-analysis",
+    model="cardiffnlp/twitter-roberta-base-sentiment",
+    tokenizer="cardiffnlp/twitter-roberta-base-sentiment"
+)
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL)
+# Load keywords from CSV
+def load_keywords(path: str) -> list:
+    try:
+        df = pd.read_csv(path)
+        return [str(x).lower() for x in df["keyword"].dropna().tolist()]
+    except Exception as e:
+        print(f"⚠️ Could not load {path}: {e}")
+        return []
 
-sentiment_pipeline = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+NEGATIVE_KEYWORDS = load_keywords("keywords_negative.csv")
+POSITIVE_KEYWORDS = load_keywords("keywords_positive.csv")
 
-# Mapping HuggingFace labels -> Human-readable
-label_map = {
-    "LABEL_0": "Negative",
-    "LABEL_1": "Neutral",
-    "LABEL_2": "Positive"
-}
+def adjust_sentiment(text: str, sentiment: str) -> str:
+    """Refine Neutral sentiment into Dominantly Negative/Positive if keywords found."""
+    text_lower = text.lower()
 
-def analyze_sentiment(text: str):
-    """Analyze single comment sentiment (3-class)"""
-    result = sentiment_pipeline(text, truncation=True)[0]
-    label = label_map.get(result["label"], result["label"])
-    score = round(result["score"], 3)
+    if sentiment == "Neutral":
+        if any(word in text_lower for word in NEGATIVE_KEYWORDS):
+            return "Neutral (Dominantly Negative)"
+        if any(word in text_lower for word in POSITIVE_KEYWORDS):
+            return "Neutral (Dominantly Positive)"
+    return sentiment
 
-    return {"text": text, "sentiment": label, "score": score}
+def analyze_sentiment(text: str) -> dict:
+    """Analyze single comment with refined Neutral handling."""
+    result = sentiment_pipeline(text)[0]
+    label = result["label"]
 
-def analyze_batch(comments: list):
-    """Analyze multiple comments (expects list of dicts with 'text')"""
+    if label == "LABEL_0":
+        sentiment = "Negative"
+    elif label == "LABEL_1":
+        sentiment = "Neutral"
+    else:
+        sentiment = "Positive"
+
+    # Apply keyword adjustment
+    sentiment = adjust_sentiment(text, sentiment)
+
+    return {"text": text, "sentiment": sentiment, "score": round(result["score"], 3)}
+
+def analyze_batch(comments: list) -> list:
+    """Analyze batch of comments with refined Neutral handling."""
     results = []
     for comment in comments:
-        analysis = analyze_sentiment(comment["text"])
-        analysis["author"] = comment.get("author", "Anonymous")
-        analysis["date"] = comment.get("date", None)
-        results.append(analysis)
+        if isinstance(comment, dict) and "text" in comment:
+            text = comment["text"]
+        else:
+            text = str(comment)
+        results.append(analyze_sentiment(text))
     return results
