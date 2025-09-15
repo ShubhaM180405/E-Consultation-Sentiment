@@ -2,30 +2,39 @@
 import pandas as pd
 
 def load_comments(uploaded_file):
-    """Read comments from uploaded CSV and normalize column names"""
+    """Read comments from uploaded CSV and normalize column names robustly"""
     df = pd.read_csv(uploaded_file)
 
-    # Standardize column names (lowercase, strip spaces)
+    # Normalize column names: lowercase + strip spaces
     df.columns = df.columns.str.strip().str.lower()
 
-    # Try to map to expected names
-    if "comment" in df.columns:
-        df.rename(columns={"comment": "text"}, inplace=True)
-    elif "comments" in df.columns:
-        df.rename(columns={"comments": "text"}, inplace=True)
-    elif "feedback" in df.columns:
-        df.rename(columns={"feedback": "text"}, inplace=True)
-    elif "review" in df.columns:
-        df.rename(columns={"review": "text"}, inplace=True)
+    # --- Handle Comment/Text column ---
+    text_aliases = ["text", "comment", "comments", "feedback", "review", "message"]
+    text_col = next((c for c in df.columns if c in text_aliases), None)
+    if text_col:
+        df.rename(columns={text_col: "text"}, inplace=True)
+    else:
+        raise ValueError("❌ Uploaded file must have a column like 'text', 'comment', 'comments', 'feedback', or 'review'")
 
-    # Add defaults if missing
-    if "text" not in df.columns:
-        raise ValueError("Uploaded file must have a column like 'comment' or 'text'")
-
-    if "author" not in df.columns:
+    # --- Handle Author column ---
+    author_aliases = ["author", "user", "username", "name"]
+    author_col = next((c for c in df.columns if c in author_aliases), None)
+    if author_col:
+        df.rename(columns={author_col: "author"}, inplace=True)
+    else:
         df["author"] = "Anonymous"
-    if "date" not in df.columns:
+
+    # --- Handle Date column ---
+    date_aliases = ["date", "created_at", "timestamp", "time"]
+    date_col = next((c for c in df.columns if c in date_aliases), None)
+    if date_col:
+        df.rename(columns={date_col: "date"}, inplace=True)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+    else:
         df["date"] = pd.Timestamp.now().date()
+
+    # Keep only relevant columns
+    df = df[["text", "author", "date"]]
 
     return df
 
@@ -33,3 +42,4 @@ def save_results_to_csv(df, filename="sentiment_results.csv"):
     """Save results to CSV"""
     df.to_csv(filename, index=False)
     return filename
+me
