@@ -22,26 +22,31 @@ POSITIVE_KEYWORDS = load_keywords("keywords_positive.csv")
 NEUTRAL_KEYWORDS  = load_keywords("keywords_neutral.csv")
 
 def adjust_sentiment(text: str, sentiment: str) -> str:
-    """Refine Neutral into Dominantly Positive/Negative if keywords found."""
+    """Refine sentiment with keyword counts, even if not Neutral."""
     text_lower = text.lower()
 
+    pos_hits = sum(word in text_lower for word in POSITIVE_KEYWORDS)
+    neg_hits = sum(word in text_lower for word in NEGATIVE_KEYWORDS)
+    neu_hits = sum(word in text_lower for word in NEUTRAL_KEYWORDS)
+
+    # Case 1: If base model already says Neutral
     if sentiment == "Neutral":
-        # Count keyword occurrences
-        pos_hits = sum(word in text_lower for word in POSITIVE_KEYWORDS)
-        neg_hits = sum(word in text_lower for word in NEGATIVE_KEYWORDS)
-        neu_hits = sum(word in text_lower for word in NEUTRAL_KEYWORDS)
-
-        # If explicitly neutral keywords, keep Neutral
-        if neu_hits > 0 and pos_hits == 0 and neg_hits == 0:
-            return "Neutral"
-
         if neg_hits > pos_hits:
             return "Neutral (Dominantly Negative)"
         elif pos_hits > neg_hits:
             return "Neutral (Dominantly Positive)"
         else:
-            return "Neutral"  # balanced or no strong signal
+            return "Neutral"
 
+    # Case 2: If base model says Positive but negatives dominate
+    if sentiment == "Positive" and neg_hits > pos_hits:
+        return "Neutral (Dominantly Negative)"
+
+    # Case 3: If base model says Negative but positives dominate
+    if sentiment == "Negative" and pos_hits > neg_hits:
+        return "Neutral (Dominantly Positive)"
+
+    # Otherwise keep as-is
     return sentiment
 
 def analyze_sentiment(text: str) -> dict:
