@@ -1,4 +1,3 @@
-# model_inference.py
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 
 # Load Cardiff NLP 3-class sentiment model
