@@ -1,45 +1,125 @@
 # utils/data_handler.py
 import pandas as pd
+import io
+from datetime import date as _date
 
-def load_comments(uploaded_file):
-    """Read comments from uploaded CSV and normalize column names robustly"""
-    df = pd.read_csv(uploaded_file)
+def load_comments(uploaded_file) -> pd.DataFrame:
+    """
+    Robustly read uploaded file (Streamlit UploadedFile or a file path).
+    Accepts: .csv, .txt, .xlsx, .xls, or raw bytes from Streamlit.
+    Normalizes columns to: 'text', 'author', 'date' and returns a DataFrame
+    with only those columns.
+    """
+    # --- get bytes and filename (support Streamlit UploadedFile) ---
+    if hasattr(uploaded_file, "getvalue"):
+        content_bytes = uploaded_file.getvalue()
+        filename = getattr(uploaded_file, "name", "") or ""
+    else:
+        # treat uploaded_file as a path-like
+        with open(uploaded_file, "rb") as f:
+            content_bytes = f.read()
+        filename = str(uploaded_file)
 
-    # Normalize column names: lowercase + strip spaces
-    df.columns = df.columns.str.strip().str.lower()
+    name_lower = filename.lower()
 
-    # --- Handle Comment/Text column ---
-    text_aliases = ["text", "comment", "comments", "feedback", "review", "message"]
+    # --- Try to read as Excel ---
+    if name_lower.endswith((".xlsx", ".xls")):
+        try:
+            df = pd.read_excel(io.BytesIO(content_bytes))
+        except Exception as e:
+            raise ValueError(f"Could not read Excel file: {e}")
+
+    # --- TXT: treat as one comment per line ---
+    elif name_lower.endswith(".txt"):
+        try:
+            text = content_bytes.decode("utf-8", errors="replace")
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            df = pd.DataFrame(lines, columns=["text"])
+        except Exception as e:
+            raise ValueError(f"Could not read text file: {e}")
+
+    # --- CSV or unknown: try CSV parsing with fallbacks ---
+    else:
+        # 1) try pandas read_csv on bytes (fast path)
+        try:
+            df = pd.read_csv(io.BytesIO(content_bytes))
+        except Exception:
+            # 2) try reading with utf-8 string IO
+            try:
+                s = content_bytes.decode("utf-8", errors="replace")
+                df = pd.read_csv(io.StringIO(s))
+            except Exception:
+                # 3) fallback: treat as plain text (one comment per line)
+                try:
+                    s = content_bytes.decode("utf-8", errors="replace")
+                    lines = [l.strip() for l in s.splitlines() if l.strip()]
+                    df = pd.DataFrame(lines, columns=["text"])
+                except Exception as e:
+                    raise ValueError(f"Could not parse uploaded file as CSV or text: {e}")
+
+    # --- Normalize column names to lowercase stripped strings ---
+    df.columns = df.columns.astype(str).str.strip().str.lower()
+
+    # --- Detect text/comment column ---
+    text_aliases = [
+        "text", "comment", "comments", "feedback", "review", "message", "body", "content"
+    ]
     text_col = next((c for c in df.columns if c in text_aliases), None)
-    if text_col:
-        df.rename(columns={text_col: "text"}, inplace=True)
-    else:
-        raise ValueError("❌ Uploaded file must have a column like 'text', 'comment', 'comments', 'feedback', or 'review'")
 
-    # --- Handle Author column ---
-    author_aliases = ["author", "user", "username", "name"]
+    # If no known text column but only one column exists, assume it's the text column
+    if text_col is None and df.shape[1] == 1:
+        text_col = df.columns[0]
+
+    if text_col is None:
+        raise ValueError(
+            "Uploaded file must contain a text column (e.g. 'text', 'comment', 'feedback', 'review')."
+        )
+
+    # --- Detect/normalize author column ---
+    author_aliases = ["author", "user", "username", "name", "sender"]
     author_col = next((c for c in df.columns if c in author_aliases), None)
-    if author_col:
-        df.rename(columns={author_col: "author"}, inplace=True)
-    else:
-        df["author"] = "Anonymous"
 
-    # --- Handle Date column ---
-    date_aliases = ["date", "created_at", "timestamp", "time"]
+    # --- Detect/normalize date column ---
+    date_aliases = ["date", "created_at", "timestamp", "time", "created", "submitted"]
     date_col = next((c for c in df.columns if c in date_aliases), None)
+
+    # --- Rename mapped columns to standard names ---
+    rename_map = {text_col: "text"}
+    if author_col:
+        rename_map[author_col] = "author"
     if date_col:
-        df.rename(columns={date_col: "date"}, inplace=True)
-        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+        rename_map[date_col] = "date"
+
+    df = df.rename(columns=rename_map)
+
+    # --- Ensure 'text' exists and is string ---
+    df["text"] = df["text"].astype(str).fillna("").str.strip()
+
+    # --- Fill or create 'author' ---
+    if "author" not in df.columns:
+        df["author"] = "Anonymous"
     else:
-        df["date"] = pd.Timestamp.now().date()
+        df["author"] = df["author"].astype(str).fillna("").replace("", "Anonymous")
 
-    # Keep only relevant columns
-    df = df[["text", "author", "date"]]
+    # --- Fill or create 'date' and coerce to date ---
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        # If conversion produced NaT for all rows, replace with today's date
+        if df["date"].isna().all():
+            today = _date.today()
+            df["date"] = pd.to_datetime(today)
+        # convert to date only (no timestamp)
+        df["date"] = df["date"].dt.date
+    else:
+        df["date"] = _date.today()
 
-    return df
+    # --- Keep only the three columns and reset index ---
+    df_out = df[["text", "author", "date"]].reset_index(drop=True)
 
-def save_results_to_csv(df, filename="sentiment_results.csv"):
-    """Save results to CSV"""
+    return df_out
+
+
+def save_results_to_csv(df: pd.DataFrame, filename: str = "sentiment_results.csv") -> str:
+    """Save results to CSV and return filename (local path)."""
     df.to_csv(filename, index=False)
     return filename
-me
