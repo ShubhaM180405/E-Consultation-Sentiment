@@ -21,41 +21,23 @@ NEGATIVE_KEYWORDS = load_keywords("keywords_negative.csv")
 POSITIVE_KEYWORDS = load_keywords("keywords_positive.csv")
 NEUTRAL_KEYWORDS  = load_keywords("keywords_neutral.csv")
 
-def adjust_sentiment(text: str, sentiment: str, score: float) -> tuple:
+def adjust_sentiment(text: str, sentiment: str) -> str:
     """
-    Refine sentiment using keyword counts + model confidence.
-    Returns (main_sentiment, sub_sentiment).
+    Refine Neutral into:
+    - Neutral (Pure Neutral)
+    - Neutral (Dominantly Positive)
+    - Neutral (Dominantly Negative)
     """
     text_lower = text.lower()
 
-    pos_hits = sum(word in text_lower for word in POSITIVE_KEYWORDS)
-    neg_hits = sum(word in text_lower for word in NEGATIVE_KEYWORDS)
-    neu_hits = sum(word in text_lower for word in NEUTRAL_KEYWORDS)
-
-    main_sentiment = sentiment
-    sub_sentiment = sentiment
-
-    # Neutral refinement
     if sentiment == "Neutral":
-        if neg_hits > pos_hits:
-            sub_sentiment = "Neutral (Dominantly Negative)"
-        elif pos_hits > neg_hits:
-            sub_sentiment = "Neutral (Dominantly Positive)"
+        if any(word in text_lower for word in NEGATIVE_KEYWORDS):
+            return "Neutral (Dominantly Negative)"
+        elif any(word in text_lower for word in POSITIVE_KEYWORDS):
+            return "Neutral (Dominantly Positive)"
         else:
-            sub_sentiment = "Neutral (Pure Neutral)"
-
-    # Positive overridden if negatives dominate
-    elif sentiment == "Positive":
-        if neg_hits > pos_hits and score < 0.95:
-            sub_sentiment = "Neutral (Dominantly Negative)"
-
-    # Negative overridden if positives dominate
-    elif sentiment == "Negative":
-        if pos_hits > neg_hits and score < 0.95:
-            sub_sentiment = "Neutral (Dominantly Positive)"
-
-    return main_sentiment, sub_sentiment
-
+            return "Neutral (Pure Neutral)"
+    return sentiment  # Positive/Negative stay as is
 
 def analyze_sentiment(text: str) -> dict:
     """Analyze single comment with refined Neutral handling."""
@@ -69,15 +51,10 @@ def analyze_sentiment(text: str) -> dict:
     else:
         sentiment = "Positive"
 
-    main_sentiment, sub_sentiment = adjust_sentiment(text, sentiment, result["score"])
+    # Apply keyword adjustment only if Neutral
+    sentiment = adjust_sentiment(text, sentiment)
 
-    return {
-        "text": text,
-        "sentiment_main": main_sentiment,
-        "sentiment_sub": sub_sentiment,
-        "score": round(result["score"], 3)
-    }
-
+    return {"text": text, "sentiment": sentiment, "score": round(result["score"], 3)}
 
 def analyze_batch(comments: list) -> list:
     """Analyze batch of comments with refined Neutral handling."""
