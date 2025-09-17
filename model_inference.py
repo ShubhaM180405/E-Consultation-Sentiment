@@ -1,16 +1,14 @@
 import pandas as pd
 from transformers import pipeline
 
-# Load Hugging Face sentiment model
+# Load model
 sentiment_pipeline = pipeline(
     "sentiment-analysis",
     model="cardiffnlp/twitter-roberta-base-sentiment",
     tokenizer="cardiffnlp/twitter-roberta-base-sentiment"
 )
 
-# ---------------------------
-# Load keywords from CSV files
-# ---------------------------
+# Load keywords from CSV
 def load_keywords(path: str) -> list:
     try:
         df = pd.read_csv(path)
@@ -23,59 +21,66 @@ NEGATIVE_KEYWORDS = load_keywords("keywords_negative.csv")
 POSITIVE_KEYWORDS = load_keywords("keywords_positive.csv")
 NEUTRAL_KEYWORDS  = load_keywords("keywords_neutral.csv")
 
-
-# ---------------------------
-# Helper for refining Neutral
-# ---------------------------
-def adjust_sentiment(text: str, sentiment_main: str) -> str:
+def adjust_sentiment(text: str, sentiment: str, score: float) -> tuple:
     """
-    Refine Neutral into Neutral (Dominantly Positive/Negative)
-    using keyword matches. If no match, stays Neutral.
+    Refine sentiment using keyword counts + model confidence.
+    Returns (main_sentiment, sub_sentiment).
     """
     text_lower = text.lower()
 
-    if sentiment_main == "Neutral":
-        if any(word in text_lower for word in NEUTRAL_KEYWORDS):
-            return "Neutral"
-        if any(word in text_lower for word in NEGATIVE_KEYWORDS):
-            return "Neutral (Dominantly Negative)"
-        if any(word in text_lower for word in POSITIVE_KEYWORDS):
-            return "Neutral (Dominantly Positive)"
-    return sentiment_main
+    pos_hits = sum(word in text_lower for word in POSITIVE_KEYWORDS)
+    neg_hits = sum(word in text_lower for word in NEGATIVE_KEYWORDS)
+    neu_hits = sum(word in text_lower for word in NEUTRAL_KEYWORDS)
+
+    main_sentiment = sentiment
+    sub_sentiment = sentiment
+
+    # Neutral refinement
+    if sentiment == "Neutral":
+        if neg_hits > pos_hits:
+            sub_sentiment = "Neutral (Dominantly Negative)"
+        elif pos_hits > neg_hits:
+            sub_sentiment = "Neutral (Dominantly Positive)"
+        else:
+            sub_sentiment = "Neutral (Pure Neutral)"
+
+    # Positive overridden if negatives dominate
+    elif sentiment == "Positive":
+        if neg_hits > pos_hits and score < 0.95:
+            sub_sentiment = "Neutral (Dominantly Negative)"
+
+    # Negative overridden if positives dominate
+    elif sentiment == "Negative":
+        if pos_hits > neg_hits and score < 0.95:
+            sub_sentiment = "Neutral (Dominantly Positive)"
+
+    return main_sentiment, sub_sentiment
 
 
-# ---------------------------
-# Single comment analysis
-# ---------------------------
 def analyze_sentiment(text: str) -> dict:
-    """Analyze a single comment and return both main & refined labels."""
+    """Analyze single comment with refined Neutral handling."""
     result = sentiment_pipeline(text)[0]
     label = result["label"]
 
-    # Map base labels
     if label == "LABEL_0":
-        sentiment_main = "Negative"
+        sentiment = "Negative"
     elif label == "LABEL_1":
-        sentiment_main = "Neutral"
+        sentiment = "Neutral"
     else:
-        sentiment_main = "Positive"
+        sentiment = "Positive"
 
-    # Refine Neutral into sub category
-    sentiment_sub = adjust_sentiment(text, sentiment_main)
+    main_sentiment, sub_sentiment = adjust_sentiment(text, sentiment, result["score"])
 
     return {
         "text": text,
-        "sentiment_main": sentiment_main,
-        "sentiment_sub": sentiment_sub,
-        "score": round(result["score"], 3),
+        "sentiment_main": main_sentiment,
+        "sentiment_sub": sub_sentiment,
+        "score": round(result["score"], 3)
     }
 
 
-# ---------------------------
-# Batch analysis
-# ---------------------------
 def analyze_batch(comments: list) -> list:
-    """Analyze multiple comments with both main & sub sentiment labels."""
+    """Analyze batch of comments with refined Neutral handling."""
     results = []
     for comment in comments:
         if isinstance(comment, dict) and "text" in comment:
