@@ -1,7 +1,13 @@
+import io
 import streamlit as st
 import pandas as pd
 from datetime import date
 
+from docx import Document
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 from model_inference import analyze_sentiment, analyze_batch
 from utils import sentiment_visualizer as viz
 from utils import data_handler as dh
@@ -56,6 +62,71 @@ st.title("💬 E-Consultation Sentiment Analysis")
 st.write("Analyze public sentiment from consultation comments with AI-powered insights")
 
 tabs = st.tabs(["📊 Dashboard", "📈 Analytics", "💬 Comments View", "🔍 Insights", "📑 Reports"])
+# =========================
+# 📄 Word Export Function
+# =========================
+def export_to_word(df: pd.DataFrame, overall_stats: dict) -> bytes:
+    doc = Document()
+    doc.add_heading("E-Consultation Sentiment Analysis Report", 0)
+
+    doc.add_heading("📊 Overall Statistics", level=1)
+    for key, value in overall_stats.items():
+        doc.add_paragraph(f"{key}: {value}")
+
+    doc.add_heading("📝 Sample Results", level=1)
+    table = doc.add_table(rows=1, cols=len(df.columns))
+    hdr_cells = table.rows[0].cells
+    for i, col in enumerate(df.columns):
+        hdr_cells[i].text = col
+    for _, row in df.head(20).iterrows():  # show first 20 rows
+        row_cells = table.add_row().cells
+        for i, val in enumerate(row):
+            row_cells[i].text = str(val)
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# =========================
+# 📄 PDF Export Function
+# =========================
+def export_to_pdf(df: pd.DataFrame, overall_stats: dict, charts: list) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph("E-Consultation Sentiment Analysis Report", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    # Stats
+    elements.append(Paragraph("📊 Overall Statistics", styles["Heading2"]))
+    for key, value in overall_stats.items():
+        elements.append(Paragraph(f"{key}: {value}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # Sample table
+    elements.append(Paragraph("📝 Sample Results", styles["Heading2"]))
+    table_data = [list(df.columns)] + df.head(15).values.tolist()
+    t = Table(table_data)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.black)
+    ]))
+    elements.append(t)
+
+    # Charts (if provided as PNG paths)
+    for chart_path in charts:
+        elements.append(Spacer(1, 20))
+        elements.append(Image(chart_path, width=400, height=250))
+
+    doc.build(elements)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
 
 # TAB 1: Dashboard
 with tabs[0]:
@@ -68,19 +139,19 @@ with tabs[0]:
     if "results" in st.session_state:
         df = pd.DataFrame(st.session_state["results"])
 
-        # Counts for each sentiment
+        # Counts for each sub sentiment
         total = len(df)
-        positive = len(df[df["sentiment"] == "Positive"])
-        negative = len(df[df["sentiment"] == "Negative"])
-        neutral = len(df[df["sentiment"] == "Neutral"])
-        neutral_neg = len(df[df["sentiment"] == "Neutral (Dominantly Negative)"])
-        neutral_pos = len(df[df["sentiment"] == "Neutral (Dominantly Positive)"])
+        positive = len(df[df["sentiment_sub"] == "Positive"])
+        negative = len(df[df["sentiment_sub"] == "Negative"])
+        neutral_pure = len(df[df["sentiment_sub"] == "Neutral (Pure Neutral)"])
+        neutral_neg = len(df[df["sentiment_sub"] == "Neutral (Dominantly Negative)"])
+        neutral_pos = len(df[df["sentiment_sub"] == "Neutral (Dominantly Positive)"])
 
         # Metric Cards
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         col1.metric("😊 Positive", positive, f"{positive/total:.1%}")
         col2.metric("😞 Negative", negative, f"{negative/total:.1%}")
-        col3.metric("😐 Neutral", neutral, f"{neutral/total:.1%}")
+        col3.metric("😐 Neutral", neutral_pure, f"{neutral_pure/total:.1%}")
         col4.metric("😐⬇️ Neutral-Dom Neg", neutral_neg, f"{neutral_neg/total:.1%}")
         col5.metric("😐⬆️ Neutral-Dom Pos", neutral_pos, f"{neutral_pos/total:.1%}")
         col6.metric("📊 Total", total)
@@ -119,4 +190,62 @@ with tabs[3]:
 with tabs[4]:
     if "results" in st.session_state:
         df = pd.DataFrame(st.session_state["results"])
-        st.download_button("📥 Download CSV", data=df.to_csv(index=False), file_name="sentiment_results.csv", mime="text/csv")
+
+        # Ensure consistent columns
+        expected_cols = ["text", "author", "date", "sentiment_main", "sentiment_sub", "score"]
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = ""
+        df = df[expected_cols]
+
+        # Preview
+        st.dataframe(df)
+
+        # Overall stats
+        stats = {
+            "Total Comments": len(df),
+            "Positive": (df["sentiment_main"] == "Positive").sum(),
+            "Negative": (df["sentiment_main"] == "Negative").sum(),
+            "Neutral": (df["sentiment_main"] == "Neutral").sum(),
+        }
+
+        # =========================
+        # 📥 Download Buttons
+        # =========================
+
+        # CSV
+        st.download_button(
+            "📥 Download CSV",
+            data=df.to_csv(index=False),
+            file_name="sentiment_results.csv",
+            mime="text/csv"
+        )
+
+        # Excel
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Sentiment Results")
+        st.download_button(
+            "📥 Download Excel",
+            data=excel_buffer.getvalue(),
+            file_name="sentiment_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        # Word
+        word_bytes = export_to_word(df, stats)
+        st.download_button(
+            "📥 Download Word",
+            data=word_bytes,
+            file_name="sentiment_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+        # PDF
+        pdf_bytes = export_to_pdf(df, stats, charts=[])
+        st.download_button(
+            "📥 Download PDF",
+            data=pdf_bytes,
+            file_name="sentiment_report.pdf",
+            mime="application/pdf"
+        )
