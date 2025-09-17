@@ -21,36 +21,41 @@ NEGATIVE_KEYWORDS = load_keywords("keywords_negative.csv")
 POSITIVE_KEYWORDS = load_keywords("keywords_positive.csv")
 NEUTRAL_KEYWORDS  = load_keywords("keywords_neutral.csv")
 
-def adjust_sentiment(text: str, sentiment: str, score: float) -> str:
-    """Refine sentiment using keyword counts + model confidence."""
+def adjust_sentiment(text: str, sentiment: str, score: float) -> tuple:
+    """
+    Refine sentiment using keyword counts + model confidence.
+    Returns (main_sentiment, sub_sentiment).
+    """
     text_lower = text.lower()
 
     pos_hits = sum(word in text_lower for word in POSITIVE_KEYWORDS)
     neg_hits = sum(word in text_lower for word in NEGATIVE_KEYWORDS)
     neu_hits = sum(word in text_lower for word in NEUTRAL_KEYWORDS)
 
-    # If base is Neutral → refine normally
+    main_sentiment = sentiment
+    sub_sentiment = sentiment
+
+    # Neutral refinement
     if sentiment == "Neutral":
         if neg_hits > pos_hits:
-            return "Neutral (Dominantly Negative)"
+            sub_sentiment = "Neutral (Dominantly Negative)"
         elif pos_hits > neg_hits:
-            return "Neutral (Dominantly Positive)"
+            sub_sentiment = "Neutral (Dominantly Positive)"
         else:
-            return "Neutral"
+            sub_sentiment = "Neutral (Pure Neutral)"
 
-    # If base is Positive but negatives dominate strongly
-    if sentiment == "Positive":
-        if neg_hits > pos_hits:
-            if score < 0.95:  # only override if model isn't extremely confident
-                return "Neutral (Dominantly Negative)"
+    # Positive overridden if negatives dominate
+    elif sentiment == "Positive":
+        if neg_hits > pos_hits and score < 0.95:
+            sub_sentiment = "Neutral (Dominantly Negative)"
 
-    # If base is Negative but positives dominate strongly
-    if sentiment == "Negative":
-        if pos_hits > neg_hits:
-            if score < 0.95:
-                return "Neutral (Dominantly Positive)"
+    # Negative overridden if positives dominate
+    elif sentiment == "Negative":
+        if pos_hits > neg_hits and score < 0.95:
+            sub_sentiment = "Neutral (Dominantly Positive)"
 
-    return sentiment
+    return main_sentiment, sub_sentiment
+
 
 def analyze_sentiment(text: str) -> dict:
     """Analyze single comment with refined Neutral handling."""
@@ -64,10 +69,15 @@ def analyze_sentiment(text: str) -> dict:
     else:
         sentiment = "Positive"
 
-    # Apply keyword adjustment
-    sentiment = adjust_sentiment(text, sentiment, result["score"])
+    main_sentiment, sub_sentiment = adjust_sentiment(text, sentiment, result["score"])
 
-    return {"text": text, "sentiment": sentiment, "score": round(result["score"], 3)}
+    return {
+        "text": text,
+        "sentiment_main": main_sentiment,
+        "sentiment_sub": sub_sentiment,
+        "score": round(result["score"], 3)
+    }
+
 
 def analyze_batch(comments: list) -> list:
     """Analyze batch of comments with refined Neutral handling."""
