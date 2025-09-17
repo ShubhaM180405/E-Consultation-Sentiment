@@ -3,3 +3,6 @@ pandas
 transformers
 torch
 plotly
+openpyxl
+python-docx
+reportlab
